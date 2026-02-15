@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: |
+          cat << EOF > sandboxec-sigsum-key.pub
+          ${{ vars.SIGSUM_PUBLIC_KEY }}
+          EOF
+      - run: |
+          cat << EOF > sandboxec-sigsum-key
+          ${{ secrets.SIGSUM_PRIVATE_KEY }}
+          EOF
+      - run: |
+          cat << EOF > sigsum-trust-policy.txt
+          ${{ vars.SIGSUM_TRUST_POLICY }}
+          EOF
+      - uses: projectdiscovery/actions/setup/go@v1
+      - run: go install sigsum.org/sigsum-go/cmd/sigsum-submit@v0.13.1
+      - uses: anchore/sbom-action/download-syft@v0
+      - uses: projectdiscovery/actions/goreleaser@v1
+        with: 
+          release: true
+        env: 
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

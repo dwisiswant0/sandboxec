@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "**.go"
+      - "go.mod"
+  pull_request:
+    branches:
+      - "**"
+    paths:
+      - "**.go"
+      - "go.mod"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: projectdiscovery/actions/setup/go@v1
+      - run: make test
+      - uses: projectdiscovery/actions/golangci-lint/v2@v1

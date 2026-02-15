@@ -1,0 +1,113 @@
+version: 2
+
+before:
+  hooks: ["go mod verify"]
+
+builds:
+  - env: ["CGO_ENABLED=0"]
+    goos: ["linux"]
+    goarch:
+      - "386"
+      - amd64
+      - arm
+      - arm64
+      - loong64
+      - mips
+      - mips64
+      - mips64le
+      - mipsle
+      - ppc64
+      - ppc64le
+      - riscv64
+      - s390x
+    ldflags:
+      - -s -w
+      - -X {{ .ModulePath }}/internal/cli.AppVersion={{ .Tag }}
+      - -X {{ .ModulePath }}/internal/cli.AppBuildCommit={{ .FullCommit }}
+      - -X {{ .ModulePath }}/internal/cli.AppBuildDate={{ .Date }}
+
+archives:
+  - formats: ["binary"]
+    name_template: >-
+      {{- .ProjectName }}_{{- .Tag }}-
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+
+binary_signs:
+  - cmd: sigsum-submit
+    args:
+      - --policy=sigsum-trust-policy.txt
+      - --signing-key={{ .ProjectName }}-sigsum-key
+      - --output=${signature}
+      - ${artifact}
+    signature: >-
+      {{- .ProjectName }}_{{- .Tag }}-
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}.proof
+    output: true
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Tag }}-checksums.txt"
+
+sboms:
+  - artifacts: binary
+    documents:
+      - >-
+        {{- .ProjectName }}_{{- .Tag }}-
+        {{- .Os }}_
+        {{- if eq .Arch "amd64" }}x86_64
+        {{- else if eq .Arch "386" }}i386
+        {{- else }}{{ .Arch }}{{ end }}.spdx.sbom
+
+snapshot:
+  version_template: "{{ .Tag }}-{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^build"
+      - "^chore"
+      - "^ci"
+      - "^docs"
+      - "^refactor"
+      - "^test"
+      - Merge pull request
+      - Merge branch
+
+release:
+  draft: true
+  prerelease: auto
+  footer: |
+    ## Verify
+
+    > [!IMPORTANT]
+    > It is strongly recommended to verify the integrity and security of the release assets before executing them. This helps mitigate potential risks associated with running unverified files.
+
+    First, verify the file using checksums.
+
+    ```bash
+    sha256sum --check --ignore-missing {{ .ProjectName }}_{{ .Tag }}-checksums.txt
+    ```
+
+    Then, ensure the authenticity of the release asset with [Sigsum](https://www.sigsum.org/getting-started/):
+
+    > [!NOTE]
+    > You need to have `sigsum-verify` CLI installed.
+    >
+    > ```bash
+    > go install sigsum.org/sigsum-go/cmd/sigsum-verify@v0.13.1
+    > ```
+
+    ```bash
+    sigsum-verify -k {{ .ProjectName }}-sigsum-key.pub -p sigsum-trust-policy.txt \
+      {{ .ProjectName }}_{{ .Tag }}-OS_ARCH.proof < {{ .ProjectName }}_{{ .Tag }}-OS_ARCH
+    ```
+  name_template: "{{ .ProjectName }} {{ .Tag }}"
+  extra_files:
+    - glob: "{{ .ProjectName }}-sigsum-key.pub"
+    - glob: "sigsum-trust-policy.txt"

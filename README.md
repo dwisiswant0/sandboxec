@@ -1,0 +1,329 @@
+# sandboxec
+
+A lightweight command sandbox for Linux, built on Landlock.
+
+<img src="https://github.com/user-attachments/assets/2ff92aaa-7596-452f-a745-c0ae1e67f63f" href="#" height="280">
+
+No daemon. No root. No image build step.
+
+Use it to run risky commands with a tighter blast radius: third-party CLIs, untrusted scripts, generated code, and one-off tooling.
+
+## Purpose
+
+Running untrusted code is often an all-or-nothing choice.
+
+Containers and VMs are great tools, but they can be too much for quick command-level isolation. Containers add image and runtime overhead. VMs add stronger isolation with higher setup and resource cost.
+
+**`sandboxec`** focuses on a narrower job: sandbox one command on the current host, with low overhead and explicit allow rules.
+
+## Why sandboxec?
+
+- Sandbox existing binaries without modifying application code.
+- Restrict filesystem and TCP access with allow-list rules.
+- Apply policy right before command execution, so child processes inherit restrictions.
+- Keep local workflows simple for CI jobs, local scripts, and developer tooling.
+
+## When to use it?
+
+Good fit:
+
+- Running a third-party CLI against a local repo.
+- Executing generated code in CI.
+- Testing install scripts before trusting them with full host access.
+- Wrapping build tools that only need a small slice of the filesystem.
+
+## When't?
+
+- You need stronger isolation boundaries than Landlock process sandboxing.
+- You need multi-tenant isolation between untrusted users/workloads.
+- You need resource isolation/quotas (CPU, memory, disk, I/O).
+- You need custom root filesystems, full runtime images, or OS-level virtualization.
+
+Use containers or VMs for those cases.
+
+## Requirements
+
+- Linux kernel >= 5.13+ (Landlock support enabled)
+
+### Kernel compatibility
+
+| Capability | Landlock ABI | Typical minimum kernel |
+| --- | --- | --- |
+| Filesystem restrictions | v1+ | 5.13+ |
+| TCP bind/connect restrictions | v4+ | 6.7+ |
+| Scoped restrictions (`--restrict-scoped`) | v6+ | newer kernels only |
+
+## Security model
+
+**`sandboxec`** limits what a process can:
+- **Read / Write / Execute** on the filesystem.
+- **Bind / Connect** on the network (TCP).
+
+Restrictions are applied immediately before launching the target command. Once set, those restrictions apply to that process and its children.
+
+> [!IMPORTANT]
+> It's designed to reduce damage from buggy, risky, or malicious user-space programs by narrowing what they can touch, hence it does NOT protect against:
+> 
+> - Kernel bugs or privileged local attackers.
+> - Resource exhaustion (CPU, memory, disk).
+> - Every possible host interaction outside configured Landlock controls.
+> 
+> Treat it as a practical containment layer.
+
+## Install
+
+* Using Go compiler:
+
+  ```bash
+  go install go.dw1.io/sandboxec@latest
+  ```
+
+> [!NOTE]
+> Requires [Go](https://go.dev/doc/install) 1.24.0 or later.
+
+* Or download a pre-built binary from [releases page](https://gh.dw1.io/sandboxec/releases).
+
+* Or build from source:
+
+> [!WARNING]
+> The `master` branch contains the latest code changes and updates, which might not have undergone thorough testing and quality assurance - thus, you may encounter instability or unexpected behavior.
+
+  ```bash
+  git clone https://github.com/dwisiswant0/sandboxec.git
+  cd sandboxec/
+  # git checkout [VERSION]
+  make build
+  # ./bin/sandboxec --help
+  ```
+
+## Usage
+
+```bash
+sandboxec [OPTIONS] [COMMAND [ARG...]]
+```
+
+Or run as an MCP server over stdio transport:
+
+```bash
+sandboxec -m mcp [OPTIONS]
+```
+
+Examples:
+
+```bash
+sandboxec --fs rx:/usr /usr/bin/echo hello
+sandboxec --fs rx:/usr -- /usr/bin/ls /usr
+sandboxec --fs rx:/usr --net c:<PORT> -- /usr/bin/curl http://127.0.0.1:<PORT>
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `-c, --config` | Path to YAML config file. |
+| `-f, --fs RIGHTS:PATH` | Add filesystem rule (repeatable). |
+| `-n, --net RIGHTS:PORT` | Add network rule (repeatable). |
+| `--abi int` | Force specific Landlock ABI version (0 for default). |
+| `--best-effort` | Continue even if the kernel lacks support for some features. |
+| `--ignore-if-missing` | Do not fail if a rule path does not exist. |
+| `--restrict-scoped` | Enable scoped IPC restrictions (requires ABI v6+). |
+| `-m, --mode string` | Execution mode (`run` or `mcp`). Default: `run`. |
+| `-V, --version` | Show app version. |
+| `-h, --help` | Show help. |
+
+Available MCP tools:
+
+- `exec`: Execute a command and return `stdout`, `stderr`, and `exit_code`.
+  - Input: `command` (required), `args` (optional array).
+  - Execution path uses `sandboxec` runtime with effective policy derived from CLI flags or YAML config.
+
+> [!NOTE]
+> * `--restrict-scoped` requires Landlock ABI v6+.
+> * In `--mode mcp`, no wrapped command arguments are accepted.
+
+## Rule format
+
+### Filesystem rules
+
+Format: `RIGHTS:PATH`
+
+Accepted rights:
+
+- `read` or `r`
+- `read_exec` or `rx`
+- `write` or `w`
+- `read_write` or `rw`
+- `read_write_exec` or `rwx`
+
+> [!NOTE]
+> Filesystem restrictions require Landlock support (Linux 5.13+).
+
+### Network rules
+
+Format: `RIGHTS:PORT`
+
+Accepted rights:
+
+- `bind` or `b`
+- `connect` or `c`
+- `bind_connect` or `bc`
+
+> [!NOTE]
+> Network restrictions (`bind` / `connect`) require newer Landlock support (ABI v4+, typically Linux 6.7+).
+
+> [!IMPORTANT]
+> If the running kernel does not support requested features, use `--best-effort` to degrade gracefully.
+
+## Rule behavior
+
+- Rules are allow-list based: if it is not allowed, it is denied. It is what it is.
+- Multiple `--fs` and `--net` entries are cumulative.
+- Rules should include every runtime dependency your command needs.
+
+## Configuration
+
+Configuration is YAML-only.
+
+### Keys
+
+```yaml
+abi: 6
+best-effort: false
+ignore-if-missing: false
+restrict-scoped: false
+fs:
+  - rx:/bin
+net:
+  - c:443
+mode: run
+```
+
+### Config lookup
+
+- If `--config` is set, that file is used.
+- Otherwise, `sandboxec.yaml` or `sandboxec.yml` is searched in:
+  1. `$XDG_CONFIG_HOME/sandboxec`
+  2. `$HOME/.config/sandboxec`
+  3. `/etc/sandboxec`
+
+If no config file is found, defaults are used.
+
+### Precedence rules
+
+- CLI flags override config values for scalar options (`mode`, `abi`, `best-effort`, `ignore-if-missing`, `restrict-scoped`).
+- `--fs` and `--net` replace config lists when those flags are set.
+- If those flags are not set, rules come from config.
+
+### Example profile
+
+```yaml
+abi: 6
+best-effort: true
+ignore-if-missing: true
+restrict-scoped: false
+fs:
+  - rx:/bin
+  - rx:/usr
+  - rx:/lib
+  - rx:/usr/lib
+  - rw:/tmp
+net:
+  - c:443
+```
+
+## Exit codes
+
+- `0`: Wrapped command succeeded.
+- `N`: Wrapped command exited with code `N`.
+- `1`: **`sandboxec`** failed to setup (parsing error, Landlock failure).
+
+## Practical notes
+
+- **Allow-list only**: If a path isn't listed, it is invisible or inaccessible.
+- **Dependencies**: Binaries often need to read `/lib`, `/usr/lib`, or shared object dependencies (`.so` files).
+- **Network**: Rules control TCP bind/connect. They do not replace firewalls.
+- **Scope**: This is not a full container or VM replacement. It is a fast, command-level control layer for risky workloads.
+
+## Examples
+
+### Minimal sandboxed command
+
+```bash
+sandboxec --fs rx:/usr -- /usr/bin/id
+```
+
+### Restrict to read+exec on system binaries and read/write on tmp
+
+```bash
+sandboxec \
+  --fs rx:/bin \
+  --fs rx:/usr \
+  --fs rw:/tmp \
+  -- /bin/ls /tmp
+```
+
+### Lock a command to local-only filesystem access
+
+```bash
+sandboxec \
+  --fs rx:/usr \
+  --fs rw:$PWD \
+  -- your-command
+```
+
+### Outbound HTTPS only (connect on 443)
+
+```bash
+sandboxec --fs rx:/usr --net c:443 -- /usr/bin/curl https://example.com
+```
+
+### Run with explicit config file
+
+```bash
+sandboxec --config ./sandboxec.yaml -- /bin/echo ok
+```
+
+### Build step with outbound package fetch only
+
+```bash
+sandboxec \
+  --fs rx:/usr \
+  --fs rw:$PWD \
+  --fs rw:/tmp \
+  --net c:443 \
+  -- your-build-command
+```
+
+### MCP configuration
+
+```json
+{
+  "mcpServers": {
+    "sandboxec": {
+      "command": "/path/to/go/bin/sandboxec",
+      "args": [
+        "--mode", "mcp",
+        "--fs", "rx:/usr",
+        "--fs", "rw:/tmp",
+        "--fs", "rw:/path/to/your/workspace",
+        "--net", "c:443"
+      ]
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+- **`invalid fs rights`**: Check spelling (`rx`, `rw`, etc.).
+- **Landlock failures**: Your kernel *might* be too old. Try `--best-effort` or remove flags that require newer ABIs (like network rules on old kernels).
+
+If commands fail with `permission denied`:
+
+- Add missing runtime paths (`/usr`, `/lib`, `/usr/lib`, `/etc` as needed).
+- Check kernel capability for requested rule types.
+- Retry with `--best-effort` to confirm whether unsupported ABI features are the blocker.
+
+# License
+
+**sandboxec** is released with ♡ by [**@dwisiswant0**](https://dw1.io) under the Apache 2.0 license. See [`LICENSE`](/LICENSE).

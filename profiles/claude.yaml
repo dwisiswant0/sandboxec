@@ -1,0 +1,9 @@
+abi: 6
+ignore-if-missing: true
+fs:
+  - rx:/
+  - rw:$HOME/.claude/
+  - rw:$HOME/.claude.json
+  - rw:$PWD
+net:
+  - c:443
