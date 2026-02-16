@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	AppVersion     = "v0.1.0"
+	AppVersion     = "v0.2.1"
 	AppBuildCommit = ""
 	AppBuildDate   = ""
 )

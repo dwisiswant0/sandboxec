@@ -75,7 +75,7 @@ Restrictions are applied immediately before launching the target command. Once s
 * Using Go compiler:
 
   ```bash
-  go install go.dw1.io/sandboxec@latest
+  go install go.dw1.io/sandboxec@v0.2.1
   ```
 
 > [!NOTE]

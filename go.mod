@@ -29,3 +29,7 @@ require (
 	golang.org/x/text v0.28.0 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 )
+
+retract (
+	v0.2.0
+)
