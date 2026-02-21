@@ -1,5 +1,12 @@
 # sandboxec
 
+<a href="https://gh.dw1.io/sandboxec/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/dwisiswant0/sandboxec?color=blueviolet" /></a>
+<a href="https://github.com/dwisiswant0/sandboxec/actions/workflows/tests.yaml"><img alt="tests" src="https://github.com/dwisiswant0/sandboxec/actions/workflows/tests.yaml/badge.svg" /></a>
+<a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-linux-green" /></a>
+<a href="/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-yellowgreen" /></a>
+
+<img height="122" alt="sandboxec" href="#" src="https://github.com/user-attachments/assets/fe4a25bd-b317-4c3a-a5a9-a0a1a3d031c2" />
+
 A lightweight command sandbox for Linux, built on Landlock.
 
 <img src="https://github.com/user-attachments/assets/2ff92aaa-7596-452f-a745-c0ae1e67f63f" href="#" height="280">
