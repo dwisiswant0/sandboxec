@@ -23,6 +23,10 @@ Containers and VMs are great tools, but they can be too much for quick command-l
 
 **`sandboxec`** focuses on a narrower job: sandbox one command on the current host, with low overhead and explicit allow rules.
 
+**See also**:
+
+* D. Siswanto, “The most practical, fast, tiny command sandboxing for AI agents,” Dwi Siswanto, Feb. 17, 2026. https://dw1.io/blog/2026/02/17/sandboxec/
+
 ## Why sandboxec?
 
 - Sandbox existing binaries without modifying application code.
