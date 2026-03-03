@@ -118,3 +118,67 @@ func TestRun_ModeMCPPropagatesServerError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestNamedConfigURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantURL string
+		wantErr bool
+	}{
+		{
+			name:    "normal",
+			input:   "agents/codex",
+			wantURL: "https://github.com/sandboxec/profiles/raw/refs/heads/based/agents/codex.yaml",
+		},
+		{
+			name:    "trim-leading-slash-and-extension",
+			input:   "/agents/codex.yaml",
+			wantURL: "https://github.com/sandboxec/profiles/raw/refs/heads/based/agents/codex.yaml",
+		},
+		{
+			name:    "trim-yml-extension",
+			input:   "agents/codex.yml",
+			wantURL: "https://github.com/sandboxec/profiles/raw/refs/heads/based/agents/codex.yaml",
+		},
+		{
+			name:    "empty-fails",
+			input:   "   ",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := namedConfigURL(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.wantURL {
+				t.Fatalf("url = %q, want %q", got, tt.wantURL)
+			}
+		})
+	}
+}
+
+func TestRun_ConfigAndNamedConfigMutuallyExclusive(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	exitCode, err := Run([]string{"--config", "a.yaml", "--named-config", "agents/codex", "--mode", "mcp"})
+	if exitCode != 1 {
+		t.Fatalf("exitCode = %d, want 1", exitCode)
+	}
+	if err == nil {
+		t.Fatal("expected conflict error")
+	}
+	if !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

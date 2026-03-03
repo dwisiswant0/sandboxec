@@ -19,6 +19,7 @@ const (
   sandboxec --fs rx:/usr -- ls /usr
   sandboxec --fs rx:/usr --net c:<PORT> -- curl http://127.0.0.1:<PORT>
   sandboxec --mode mcp --fs rx:/usr --fs rw:$PWD --net c:443
+  sandboxec -C agents/claude -- claude --dangerously-skip-permissions
 `
 )
 

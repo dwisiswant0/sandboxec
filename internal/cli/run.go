@@ -14,10 +14,13 @@ import (
 	"go.sandbox.ec/sandboxec/internal/mcp"
 )
 
+const namedConfigBaseURL = "https://github.com/sandboxec/profiles/raw/refs/heads/based/"
+
 // Run executes the sandboxec CLI workflow.
 // It returns a process exit code for wrapped commands and an error for CLI/runtime failures.
 func Run(argv []string) (int, error) {
 	var configPath string
+	var namedConfig string
 	mode := modeValue{value: "run"}
 	var fsFlag fsRulesValue
 	var networkFlag networkRulesValue
@@ -39,6 +42,7 @@ func Run(argv []string) (int, error) {
 	}
 
 	flagSet.StringVarP(&configPath, "config", "c", "", "Path to YAML config file")
+	flagSet.StringVarP(&namedConfig, "named-config", "C", "", "Named config profile (mapped to sandboxec/profiles repository)")
 	flagSet.VarP(&fsFlag, "fs", "f", "Filesystem rule (repeatable)")
 	flagSet.VarP(&networkFlag, "net", "n", "Network rule (repeatable)")
 	flagSet.Int("abi", 0, "Landlock ABI version (1-6, 0 means default)")
@@ -64,6 +68,18 @@ func Run(argv []string) (int, error) {
 	if version {
 		_, _ = fmt.Fprintln(os.Stdout, appVersion())
 		return 0, nil
+	}
+
+	if flagSet.Changed("config") && flagSet.Changed("named-config") {
+		return 1, errors.New("--config and --named-config cannot be used together")
+	}
+
+	if flagSet.Changed("named-config") {
+		resolvedConfigPath, resolveErr := namedConfigURL(namedConfig)
+		if resolveErr != nil {
+			return 1, resolveErr
+		}
+		configPath = resolvedConfigPath
 	}
 
 	cfg, err := loadConfig(configPath)
@@ -221,4 +237,17 @@ func appVersion() string {
 	sb.WriteString(AppAuthor)
 
 	return sb.String()
+}
+
+func namedConfigURL(value string) (string, error) {
+	name := strings.TrimSpace(value)
+	name = strings.TrimPrefix(name, "/")
+	name = strings.TrimSuffix(name, ".yaml")
+	name = strings.TrimSuffix(name, ".yml")
+
+	if name == "" {
+		return "", errors.New("named config value cannot be empty")
+	}
+
+	return namedConfigBaseURL + name + ".yaml", nil
 }
