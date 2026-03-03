@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,13 +36,22 @@ func loadConfig(configPath string) (appConfig, error) {
 	v.SetDefault("unsafe-host-runtime", false)
 	v.SetDefault("fs", []string{})
 	v.SetDefault("net", []string{})
+	loadedFromReader := false
 
 	if configPath != "" {
-		ext := strings.ToLower(filepath.Ext(configPath))
+		ext := configPathExt(configPath)
 		if ext != ".yaml" && ext != ".yml" {
 			return cfg, fmt.Errorf("config file must be YAML (.yaml/.yml): %s", configPath)
 		}
-		v.SetConfigFile(configPath)
+
+		if isRemoteConfigPath(configPath) {
+			if err := readRemoteYAMLConfig(v, configPath); err != nil {
+				return cfg, err
+			}
+			loadedFromReader = true
+		} else {
+			v.SetConfigFile(configPath)
+		}
 	} else {
 		v.SetConfigName("sandboxec")
 		v.SetConfigType("yaml")
@@ -47,10 +60,12 @@ func loadConfig(configPath string) (appConfig, error) {
 		}
 	}
 
-	if err := v.ReadInConfig(); err != nil {
-		var notFoundError viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFoundError) {
-			return cfg, fmt.Errorf("read config: %w", err)
+	if !loadedFromReader {
+		if err := v.ReadInConfig(); err != nil {
+			var notFoundError viper.ConfigFileNotFoundError
+			if !errors.As(err, &notFoundError) {
+				return cfg, fmt.Errorf("read config: %w", err)
+			}
 		}
 	}
 
@@ -67,6 +82,56 @@ func loadConfig(configPath string) (appConfig, error) {
 	cfg.NetworkRules = append([]string(nil), v.GetStringSlice("net")...)
 
 	return cfg, nil
+}
+
+func isRemoteConfigPath(configPath string) bool {
+	u, err := url.Parse(configPath)
+	if err != nil {
+		return false
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+
+	return scheme == "http" || scheme == "https"
+}
+
+func configPathExt(configPath string) string {
+	if !isRemoteConfigPath(configPath) {
+		return strings.ToLower(filepath.Ext(configPath))
+	}
+
+	u, err := url.Parse(configPath)
+	if err != nil {
+		return ""
+	}
+
+	return strings.ToLower(filepath.Ext(u.Path))
+}
+
+func readRemoteYAMLConfig(v *viper.Viper, configURL string) error {
+	resp, err := http.Get(configURL)
+	if err != nil {
+		return fmt.Errorf("read config: fetch %s: %w", configURL, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("read config: fetch %s: %s", configURL, resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read config: fetch %s: %w", configURL, err)
+	}
+
+	v.SetConfigType("yaml")
+	if err := v.ReadConfig(bytes.NewReader(body)); err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	return nil
 }
 
 func configSearchPaths() []string {

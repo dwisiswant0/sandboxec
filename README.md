@@ -133,6 +133,7 @@ sandboxec --mode mcp --fs rx:/usr --fs rw:$PWD --net c:443
 | Option | Description |
 | --- | --- |
 | `-c, --config` | Path to YAML config file. |
+| `-C, --named-config` | Named config profile (mapped to sandboxec/profiles repository). |
 | `-f, --fs RIGHTS:PATH` | Add filesystem rule (repeatable). |
 | `-n, --net RIGHTS:PORT` | Add network rule (repeatable). |
 | `--abi int` | Force specific Landlock ABI version (0 for default). |
@@ -216,6 +217,7 @@ mode: run
 ### Config lookup
 
 - If `--config` is set, that file is used.
+- If `--named-config` is set, the value maps to a profile in the [sandboxec/profiles](https://github.com/sandboxec/profiles) repository.
 - Otherwise, `sandboxec.yaml` or `sandboxec.yml` is searched in:
   1. `$XDG_CONFIG_HOME/sandboxec`
   2. `$HOME/.config/sandboxec`
@@ -225,6 +227,7 @@ If no config file is found, defaults are used.
 
 ### Precedence rules
 
+- `--config` and `--named-config` cannot be used together.
 - CLI flags override config values for scalar options.
 - `--fs` and `--net` replace config lists when those flags are set.
 - If those flags are not set, rules come from config.
@@ -313,6 +316,12 @@ sandboxec \
 
 ```bash
 sandboxec --config ./sandboxec.yaml -- /bin/echo ok
+```
+
+### Run with named profile config
+
+```bash
+sandboxec --named-config agents/claude -- claude --dangerously-skip-permissions
 ```
 
 ### Build step with outbound package fetch only

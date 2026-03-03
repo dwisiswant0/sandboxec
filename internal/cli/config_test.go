@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -112,6 +114,35 @@ func TestLoadConfig_AutoSearchXDG(t *testing.T) {
 		t.Fatalf("fs rules mismatch: %v", cfg.FSRules)
 	}
 	if !reflect.DeepEqual(cfg.NetworkRules, []string{"c:53"}) {
+		t.Fatalf("network rules mismatch: %v", cfg.NetworkRules)
+	}
+}
+
+func TestLoadConfig_RemoteYAML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/profiles/agents/codex.yaml" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("mode: mcp\nabi: 4\nfs:\n  - rx:/usr\nnet:\n  - c:443\n"))
+	}))
+	t.Cleanup(server.Close)
+
+	cfg, err := loadConfig(server.URL + "/profiles/agents/codex.yaml")
+	if err != nil {
+		t.Fatalf("loadConfig remote yaml failed: %v", err)
+	}
+
+	if cfg.Mode != "mcp" {
+		t.Fatalf("unexpected mode: %q", cfg.Mode)
+	}
+	if cfg.ABI != 4 {
+		t.Fatalf("unexpected abi: %d", cfg.ABI)
+	}
+	if !reflect.DeepEqual(cfg.FSRules, []string{"rx:/usr"}) {
+		t.Fatalf("fs rules mismatch: %v", cfg.FSRules)
+	}
+	if !reflect.DeepEqual(cfg.NetworkRules, []string{"c:443"}) {
 		t.Fatalf("network rules mismatch: %v", cfg.NetworkRules)
 	}
 }
