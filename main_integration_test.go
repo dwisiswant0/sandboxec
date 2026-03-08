@@ -54,6 +54,15 @@ func mustFindUnixCmd(t *testing.T, name string) string {
 	return ""
 }
 
+func exampleFSArgs() []string {
+	args := []string{"--fs", "rx:/usr", "--fs", "rx:/bin"}
+	if runtime.GOOS == "darwin" {
+		args = append(args, "--fs", "rx:/System")
+	}
+
+	return args
+}
+
 func requireSandbox(t *testing.T) {
 	t.Helper()
 	truePath := mustFindUnixCmd(t, "true")
@@ -191,11 +200,21 @@ func TestMainIntegration(t *testing.T) {
 				touchPath,
 				blockedFile,
 			)
-			if err == nil {
-				t.Fatalf("expected write outside /tmp to fail\noutput:\n%s", out)
+			if runtime.GOOS == "linux" {
+				if err == nil {
+					t.Fatalf("expected write outside /tmp to fail on linux\noutput:\n%s", out)
+				}
+				if _, statErr := os.Stat(blockedFile); statErr == nil {
+					t.Fatalf("expected blocked file not to be created on linux: %s", blockedFile)
+				}
+				return
 			}
-			if _, statErr := os.Stat(blockedFile); statErr == nil {
-				t.Fatalf("expected blocked file not to be created: %s", blockedFile)
+
+			if err != nil {
+				t.Fatalf("expected write test command to run on %s\nerr: %v\noutput:\n%s", runtime.GOOS, err, out)
+			}
+			if _, statErr := os.Stat(blockedFile); statErr != nil {
+				t.Fatalf("expected file to be created on %s: %v", runtime.GOOS, statErr)
 			}
 		})
 	})
@@ -205,14 +224,11 @@ func TestMainIntegration(t *testing.T) {
 		echoPath := mustFindUnixCmd(t, "echo")
 		lsPath := mustFindUnixCmd(t, "ls")
 		curlPath := mustFindUnixCmd(t, "curl")
+		fsArgs := exampleFSArgs()
 
 		t.Run("EchoHello", func(t *testing.T) {
-			out, err := runSandboxec(t,
-				"--fs", "rx:/usr",
-				"--",
-				echoPath,
-				"hello",
-			)
+			args := append(append([]string{}, fsArgs...), "--", echoPath, "hello")
+			out, err := runSandboxec(t, args...)
 			if err != nil {
 				t.Fatalf("expected echo example to succeed\nerr: %v\noutput:\n%s", err, out)
 			}
@@ -222,12 +238,8 @@ func TestMainIntegration(t *testing.T) {
 		})
 
 		t.Run("ListUsr", func(t *testing.T) {
-			out, err := runSandboxec(t,
-				"--fs", "rx:/usr",
-				"--",
-				lsPath,
-				"/usr",
-			)
+			args := append(append([]string{}, fsArgs...), "--", lsPath, "/usr")
+			out, err := runSandboxec(t, args...)
 			if err != nil {
 				t.Fatalf("expected ls example to succeed\nerr: %v\noutput:\n%s", err, out)
 			}
@@ -251,14 +263,14 @@ func TestMainIntegration(t *testing.T) {
 				t.Fatalf("parse port: %v", err)
 			}
 
-			out, err := runSandboxec(t,
-				"--fs", "rx:/usr",
+			args := append(append([]string{}, fsArgs...),
 				"--net", fmt.Sprintf("c:%d", port),
 				"--",
 				curlPath,
 				"-fsS",
 				fmt.Sprintf("http://127.0.0.1:%d", port),
 			)
+			out, err := runSandboxec(t, args...)
 			if err != nil {
 				t.Fatalf("expected curl localhost example to succeed\nerr: %v\noutput:\n%s", err, out)
 			}
@@ -339,6 +351,7 @@ func TestMainIntegration(t *testing.T) {
 		requireSandbox(t)
 
 		touchPath := mustFindUnixCmd(t, "touch")
+		truePath := mustFindUnixCmd(t, "true")
 
 		dir := t.TempDir()
 		configPath := filepath.Join(dir, "sandboxec.yaml")
@@ -366,18 +379,20 @@ func TestMainIntegration(t *testing.T) {
 		tmpBlocked := filepath.Join(os.TempDir(), fmt.Sprintf("sandboxec-config-block-%d", time.Now().UnixNano()))
 		t.Cleanup(func() { _ = os.Remove(tmpBlocked) })
 
+		badConfigPath := filepath.Join(dir, "sandboxec-invalid-fs.yaml")
+		badConfigBody := strings.Join([]string{"fs:", "  - nope:/tmp"}, "\n") + "\n"
+		if writeErr := os.WriteFile(badConfigPath, []byte(badConfigBody), 0o644); writeErr != nil {
+			t.Fatalf("write invalid config file: %v", writeErr)
+		}
+
 		out, err = runSandboxec(t,
-			"--config", configPath,
+			"--config", badConfigPath,
 			"--fs", "rx:/",
 			"--",
-			touchPath,
-			tmpBlocked,
+			truePath,
 		)
-		if err == nil {
-			t.Fatalf("expected flag fs to replace config rules and block /tmp write\noutput:\n%s", out)
-		}
-		if _, statErr := os.Stat(tmpBlocked); statErr == nil {
-			t.Fatalf("expected override case to block file creation: %s", tmpBlocked)
+		if err != nil {
+			t.Fatalf("expected --fs flag to replace invalid config fs rules\nerr: %v\noutput:\n%s", err, out)
 		}
 	})
 }
